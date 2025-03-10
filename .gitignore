@@ -8,9 +8,9 @@ Intermediate/
 DerivedDataCache/
 Saved/
 Content/StartContent/
-ThirdParty/
 Build/
 Linux/
+
 
 # 忽略整个 Content 文件夹
 Content/
