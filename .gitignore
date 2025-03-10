@@ -8,27 +8,21 @@ Intermediate/
 DerivedDataCache/
 Saved/
 Content/StartContent/
+ThirdParty/
 Build/
 Linux/
 
+# 忽略整个 Content 文件夹
+Content/
 
-# 忽略 Content 目录下的所有文件和文件夹
-Content/*
-
-# 但允许 Content/ 目录本身（需要手动添加 `.gitkeep`）
-!Content/
-# 防止umap丢失大世界数据
-!Content/__ExternalActors__/
-!Content/__ExternalObjects__/
-# 允许上传特定的文件
+# 但保留 Content 文件夹内的某些文件
 !Content/Untitled.umap
 !Content/Untitled_HLOD0_Instancing.uasset
 
-# 允许上传特定文件夹
+# 但保留 Content 内的 Curve、HttpServer、Material 文件夹
 !Content/Curve/
 !Content/HttpServer/
 !Content/Material/
-
 
 
 
