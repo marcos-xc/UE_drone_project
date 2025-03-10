@@ -1,0 +1,28 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.0.3",
+	"FriendlyName": "BlueprintHTTP Server",
+	"Description": "Creates a Web Server from your Unreal Engine Application. Serve static files and respond to HTTP(S) requests.",
+	"Category": "",
+	"CreatedBy": "Pandores",
+	"CreatedByURL": "https://www.unrealengine.com/marketplace/en-US/profile/Pandores?count=50&sortBy=effectiveDate&sortDir=DESC&start=0",
+	"DocsURL": "https://pandoa.github.io/BlueprintHttpServer/#/",
+	"MarketplaceURL": "com.epicgames.launcher://ue/marketplace/product/57188a292ab94b63b2685e42226f5ac7",
+	"SupportURL": "mailto:pandores.marketplace@gmail.com",
+	"EngineVersion": "5.1.0",
+	"CanContainContent": false,
+	"Installed": true,
+	"Modules": [
+		{
+			"Name": "BlueprintHttpServer",
+			"Type": "Runtime",
+			"LoadingPhase": "Default",
+			"PlatformAllowList": [
+				"Mac",
+				"Win64",
+				"Linux"
+			]
+		}
+	]
+}
