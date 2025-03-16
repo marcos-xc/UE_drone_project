@@ -142,76 +142,119 @@ void ASavePhotoPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 
 void ASavePhotoPawn::SaveImage(const FString& SavePath, const FString& FileName, bool bOverride, bool Debug)
 {
-	// 创建支持HDR的渲染目标
-	UTextureRenderTarget2D* RenderTarget = NewObject<UTextureRenderTarget2D>(this);
-	RenderTarget->InitCustomFormat(1920, 1080, PF_A16B16G16R16, false); // 使用16位浮点格式
-	RenderTarget->TargetGamma = 2.2f; // 设置目标Gamma值
-	RenderTarget->RenderTargetFormat = ETextureRenderTargetFormat::RTF_RGBA16f;
+    // 检查 SceneCaptureComponent 是否有效
+    if (!SceneCaptureComponent)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SceneCaptureComponent is null!"));
+        return;
+    }
 
-	// 确保后处理设置生效
-	SceneCaptureComponent->PostProcessSettings.bOverride_SceneFringeIntensity = true;
-	SceneCaptureComponent->PostProcessSettings.SceneFringeIntensity = 0.0f;
-	SceneCaptureComponent->PostProcessBlendWeight = 1.0f;
-	SceneCaptureComponent->CaptureSource = ESceneCaptureSource::SCS_FinalColorLDR; // 使用后处理后的颜色
+    // 创建支持HDR的渲染目标
+    UTextureRenderTarget2D* RenderTarget = NewObject<UTextureRenderTarget2D>(this);
+    if (!RenderTarget)
+    {
+        UE_LOG(LogTemp, Error, TEXT("Failed to create RenderTarget!"));
+        return;
+    }
 
-	// 设置渲染目标并捕获
-	SceneCaptureComponent->TextureTarget = RenderTarget;
-	SceneCaptureComponent->CaptureScene();
-	if (!SceneCaptureComponent)
-	{
-		UE_LOG(LogTemp, Error, TEXT("SceneCaptureComponent is null!"));
-		return;
-	}
+    // 使用 PF_FloatRGBA 格式
+    RenderTarget->InitCustomFormat(1920, 1080, PF_FloatRGBA, false); // 使用 PF_FloatRGBA 格式
+    RenderTarget->TargetGamma = 2.2f; // 设置目标Gamma值
+    RenderTarget->RenderTargetFormat = ETextureRenderTargetFormat::RTF_RGBA16f;
 
-	if (!SceneCaptureComponent->TextureTarget)
-	{
-		UE_LOG(LogTemp, Error, TEXT("TextureTarget is null!"));
-		return;
-	}
-	
-	// 生成完整路径
-	FString FullFilePath = FPaths::Combine(SavePath, FileName + TEXT(".png"));
-	// 确保文件不会被 UE 占用导致崩溃
-	if (bOverride && IFileManager::Get().FileExists(*FullFilePath))
-	{
-		if (IFileManager::Get().FileExists(*FullFilePath))
-		{
-			UE_LOG(LogTemp, Warning, TEXT("Deleting existing file: %s"), *FullFilePath);
-			IFileManager::Get().Delete(*FullFilePath);
-		}
-		else
-		{
-			UE_LOG(LogTemp, Warning, TEXT("File is in use, skipping deletion: %s"), *FullFilePath);
-		}
-	}
-	// 如果 bOverride 为 true，则先删除已有的图片，防止叠加
-	if (bOverride && FPaths::FileExists(FullFilePath))
-	{
-		IFileManager& FileManager = IFileManager::Get();
-		FileManager.Delete(*FullFilePath);
-	}
+    // 确保后处理设置生效
+    SceneCaptureComponent->PostProcessSettings.bOverride_SceneFringeIntensity = true;
+    SceneCaptureComponent->PostProcessSettings.SceneFringeIntensity = 0.0f;
+    SceneCaptureComponent->PostProcessBlendWeight = 1.0f;
+    SceneCaptureComponent->CaptureSource = ESceneCaptureSource::SCS_FinalColorHDR; // 使用HDR数据
 
-	// 读取像素数据
-	TArray<FColor> Bitmap;
-	FTextureRenderTargetResource* RTResource = RenderTarget->GameThread_GetRenderTargetResource();
-	if (RTResource)
-	{
-		RTResource->ReadPixels(Bitmap, FReadSurfaceDataFlags(), FIntRect(0, 0, RenderTarget->SizeX, RenderTarget->SizeY));
+    // 设置渲染目标并捕获
+    SceneCaptureComponent->TextureTarget = RenderTarget;
 
-		// 转换到sRGB颜色空间（如果需要）
-		for (FColor& Pixel : Bitmap)
-		{
-			Pixel = FLinearColor(Pixel).ToFColor(true); // 转换为sRGB
-		}
+    // 确保在游戏线程中调用
+    check(IsInGameThread());
+    SceneCaptureComponent->CaptureScene();
 
-		// 保存为PNG
-		FFileHelper::CreateBitmap(*FullFilePath, RenderTarget->SizeX, RenderTarget->SizeY, Bitmap.GetData());
+    // 检查渲染目标是否有效
+    if (!SceneCaptureComponent->TextureTarget)
+    {
+        UE_LOG(LogTemp, Error, TEXT("TextureTarget is null!"));
+        return;
+    }
 
-		if (Debug)
-		{
-			UE_LOG(LogTemp, Warning, TEXT("Saved image to: %s"), *FullFilePath);
-		}
-	}
+    // 生成完整路径
+    FString FullFilePath = FPaths::Combine(SavePath, FileName + TEXT(".png"));
+    if (FullFilePath.IsEmpty())
+    {
+        UE_LOG(LogTemp, Error, TEXT("File path is empty!"));
+        return;
+    }
+
+    if (bOverride)
+    {
+        // 获取文件夹中的所有 PNG 文件
+        TArray<FString> PNGFiles;
+        IFileManager& FileManager = IFileManager::Get();
+
+        // 查找所有 PNG 文件
+        const FString SearchPath = FPaths::Combine(SavePath, TEXT("*.bmp"));
+        FileManager.FindFiles(PNGFiles, *SearchPath, true, false);
+
+        // 如果有 PNG 文件，则删除它们
+        if (PNGFiles.Num() > 0)
+        {
+            Print("Found PNG files, deleting...");
+            for (const FString& PNGFile : PNGFiles)
+            {
+                FString FilePath = FPaths::Combine(SavePath, PNGFile);
+                if (FileManager.Delete(*FilePath))
+                {
+                    UE_LOG(LogTemp, Warning, TEXT("Deleted file: %s"), *FilePath);
+                }
+                else
+                {
+                    UE_LOG(LogTemp, Warning, TEXT("Failed to delete file: %s"), *FilePath);
+                }
+            }
+        }
+        else
+        {
+            Print("No PNG files found.");
+        }
+    }
+
+    // 读取像素数据
+    TArray<FFloat16Color> HDRBitmap;
+    FTextureRenderTargetResource* RTResource = RenderTarget->GameThread_GetRenderTargetResource();
+    if (!RTResource)
+    {
+        UE_LOG(LogTemp, Error, TEXT("Failed to get RenderTargetResource!"));
+        return;
+    }
+
+    RTResource->ReadFloat16Pixels(HDRBitmap);
+
+    // 如果需要保存为LDR PNG，将HDR数据转换为8位RGBA
+    TArray<FColor> LDRBitmap;
+    LDRBitmap.Reserve(HDRBitmap.Num());
+    for (const FFloat16Color& HDRPixel : HDRBitmap)
+    {
+        FLinearColor LinearColor(HDRPixel.R, HDRPixel.G, HDRPixel.B, HDRPixel.A);
+        LDRBitmap.Add(LinearColor.ToFColor(true)); // 转换为sRGB
+    }
+
+    // 保存为PNG
+    if (FFileHelper::CreateBitmap(*FullFilePath, RenderTarget->SizeX, RenderTarget->SizeY, LDRBitmap.GetData()))
+    {
+        if (Debug)
+        {
+            UE_LOG(LogTemp, Warning, TEXT("Saved image to: %s"), *FullFilePath);
+        }
+    }
+    else
+    {
+        UE_LOG(LogTemp, Error, TEXT("Failed to save image to: %s"), *FullFilePath);
+    }
 }
 
 
