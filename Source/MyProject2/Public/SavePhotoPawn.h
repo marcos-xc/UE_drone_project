@@ -37,9 +37,13 @@ public:
 	// Capture function
 	void CaptureImage();
 
-	UFUNCTION(BlueprintCallable,Category="Capture")
-	// Save image function
-	void SaveImage(bool Debug);
+	// UFUNCTION(BlueprintCallable,Category="Capture")
+	// // Save image function
+	// void SaveImage(bool Debug);
+
+	//316
+	UFUNCTION(BlueprintCallable, Category = "Screenshot")
+	void SaveImage(const FString& SavePath, const FString& FileName,bool bOverride, bool Debug);
 
 	static void Print(const FString& Target);
 

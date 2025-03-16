@@ -7,6 +7,7 @@
 // #include "Engine/TextureRenderTarget2D.h"
 // #include "Engine/SceneCapture2D.h"
 // #include "Kismet/GameplayStatics.h"
+#include "Kismet/KismetRenderingLibrary.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 // #include "ImageUtils.h"
@@ -44,53 +45,53 @@ void ASavePhotoPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 
 
 // Capture the image and save it
-void ASavePhotoPawn::CaptureImage()
-{
-	// Call the capture function
-	SaveImage(true);
-}
+// void ASavePhotoPawn::CaptureImage()
+// {
+// 	// Call the capture function
+// 	SaveImage(true);
+// }
 
 // Save the captured image to a file
-void ASavePhotoPawn::SaveImage(bool Debug)
-{
-	// 创建支持HDR的渲染目标
-	UTextureRenderTarget2D* RenderTarget = NewObject<UTextureRenderTarget2D>(this);
-	RenderTarget->InitCustomFormat(1920, 1080, PF_A16B16G16R16, false); // 使用16位浮点格式
-	RenderTarget->TargetGamma = 2.2f; // 设置目标Gamma值
-	RenderTarget->RenderTargetFormat = ETextureRenderTargetFormat::RTF_RGBA16f;
-
-	// 确保后处理设置生效
-	SceneCaptureComponent->PostProcessSettings.bOverride_SceneFringeIntensity = true;
-	SceneCaptureComponent->PostProcessSettings.SceneFringeIntensity = 0.0f;
-	SceneCaptureComponent->PostProcessBlendWeight = 1.0f;
-	//SceneCaptureComponent->CaptureSource = ESceneCaptureSource::SCS_FinalColorHDR;
-	SceneCaptureComponent->CaptureSource = ESceneCaptureSource::SCS_FinalColorLDR; // 使用后处理后的颜色
-
-	// 设置渲染目标并捕获
-	SceneCaptureComponent->TextureTarget = RenderTarget;
-	SceneCaptureComponent->CaptureScene();
-
-	// 读取像素数据（保持线性颜色空间）
-	TArray<FColor> Bitmap;
-	FTextureRenderTargetResource* RTResource = RenderTarget->GameThread_GetRenderTargetResource();
-	if (RTResource)
-	{
-		RTResource->ReadPixels(Bitmap, FReadSurfaceDataFlags(), FIntRect(0, 0, RenderTarget->SizeX, RenderTarget->SizeY));
-        
-		// 转换到sRGB颜色空间（如果需要）
-		for (FColor& Pixel : Bitmap)
-		{
-			Pixel = FLinearColor(Pixel).ToFColor(true); // 转换为sRGB
-		}
-
-		// 保存为PNG
-		FString Filename = FPaths::ProjectSavedDir() / TEXT("CapturedImage.png");
-		FFileHelper::CreateBitmap(*Filename, RenderTarget->SizeX, RenderTarget->SizeY, Bitmap.GetData());
-		
-        
-		if (Debug) Print(Filename);
-	}
-}
+// void ASavePhotoPawn::SaveImage(bool Debug)
+// {
+// 	// 创建支持HDR的渲染目标
+// 	UTextureRenderTarget2D* RenderTarget = NewObject<UTextureRenderTarget2D>(this);
+// 	RenderTarget->InitCustomFormat(1920, 1080, PF_A16B16G16R16, false); // 使用16位浮点格式
+// 	RenderTarget->TargetGamma = 2.2f; // 设置目标Gamma值
+// 	RenderTarget->RenderTargetFormat = ETextureRenderTargetFormat::RTF_RGBA16f;
+//
+// 	// 确保后处理设置生效
+// 	SceneCaptureComponent->PostProcessSettings.bOverride_SceneFringeIntensity = true;
+// 	SceneCaptureComponent->PostProcessSettings.SceneFringeIntensity = 0.0f;
+// 	SceneCaptureComponent->PostProcessBlendWeight = 1.0f;
+// 	//SceneCaptureComponent->CaptureSource = ESceneCaptureSource::SCS_FinalColorHDR;
+// 	SceneCaptureComponent->CaptureSource = ESceneCaptureSource::SCS_FinalColorLDR; // 使用后处理后的颜色
+//
+// 	// 设置渲染目标并捕获
+// 	SceneCaptureComponent->TextureTarget = RenderTarget;
+// 	SceneCaptureComponent->CaptureScene();
+//
+// 	// 读取像素数据（保持线性颜色空间）
+// 	TArray<FColor> Bitmap;
+// 	FTextureRenderTargetResource* RTResource = RenderTarget->GameThread_GetRenderTargetResource();
+// 	if (RTResource)
+// 	{
+// 		RTResource->ReadPixels(Bitmap, FReadSurfaceDataFlags(), FIntRect(0, 0, RenderTarget->SizeX, RenderTarget->SizeY));
+//         
+// 		// 转换到sRGB颜色空间（如果需要）
+// 		for (FColor& Pixel : Bitmap)
+// 		{
+// 			Pixel = FLinearColor(Pixel).ToFColor(true); // 转换为sRGB
+// 		}
+//
+// 		// 保存为PNG
+// 		FString Filename = FPaths::ProjectSavedDir() / TEXT("CapturedImage.png");
+// 		FFileHelper::CreateBitmap(*Filename, RenderTarget->SizeX, RenderTarget->SizeY, Bitmap.GetData());
+// 		
+//         
+// 		if (Debug) Print(Filename);
+// 	}
+// }
 //
 // void ASavePhotoPawn::SaveImage()
 // {
@@ -134,6 +135,85 @@ void ASavePhotoPawn::SaveImage(bool Debug)
 //
 // 	UE_LOG(LogTemp, Log, TEXT("Image saved: %s"), *Filename);
 // }
+
+
+
+
+
+void ASavePhotoPawn::SaveImage(const FString& SavePath, const FString& FileName, bool bOverride, bool Debug)
+{
+	// 创建支持HDR的渲染目标
+	UTextureRenderTarget2D* RenderTarget = NewObject<UTextureRenderTarget2D>(this);
+	RenderTarget->InitCustomFormat(1920, 1080, PF_A16B16G16R16, false); // 使用16位浮点格式
+	RenderTarget->TargetGamma = 2.2f; // 设置目标Gamma值
+	RenderTarget->RenderTargetFormat = ETextureRenderTargetFormat::RTF_RGBA16f;
+
+	// 确保后处理设置生效
+	SceneCaptureComponent->PostProcessSettings.bOverride_SceneFringeIntensity = true;
+	SceneCaptureComponent->PostProcessSettings.SceneFringeIntensity = 0.0f;
+	SceneCaptureComponent->PostProcessBlendWeight = 1.0f;
+	SceneCaptureComponent->CaptureSource = ESceneCaptureSource::SCS_FinalColorLDR; // 使用后处理后的颜色
+
+	// 设置渲染目标并捕获
+	SceneCaptureComponent->TextureTarget = RenderTarget;
+	SceneCaptureComponent->CaptureScene();
+	if (!SceneCaptureComponent)
+	{
+		UE_LOG(LogTemp, Error, TEXT("SceneCaptureComponent is null!"));
+		return;
+	}
+
+	if (!SceneCaptureComponent->TextureTarget)
+	{
+		UE_LOG(LogTemp, Error, TEXT("TextureTarget is null!"));
+		return;
+	}
+	
+	// 生成完整路径
+	FString FullFilePath = FPaths::Combine(SavePath, FileName + TEXT(".png"));
+	// 确保文件不会被 UE 占用导致崩溃
+	if (bOverride && IFileManager::Get().FileExists(*FullFilePath))
+	{
+		if (IFileManager::Get().FileExists(*FullFilePath))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Deleting existing file: %s"), *FullFilePath);
+			IFileManager::Get().Delete(*FullFilePath);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("File is in use, skipping deletion: %s"), *FullFilePath);
+		}
+	}
+	// 如果 bOverride 为 true，则先删除已有的图片，防止叠加
+	if (bOverride && FPaths::FileExists(FullFilePath))
+	{
+		IFileManager& FileManager = IFileManager::Get();
+		FileManager.Delete(*FullFilePath);
+	}
+
+	// 读取像素数据
+	TArray<FColor> Bitmap;
+	FTextureRenderTargetResource* RTResource = RenderTarget->GameThread_GetRenderTargetResource();
+	if (RTResource)
+	{
+		RTResource->ReadPixels(Bitmap, FReadSurfaceDataFlags(), FIntRect(0, 0, RenderTarget->SizeX, RenderTarget->SizeY));
+
+		// 转换到sRGB颜色空间（如果需要）
+		for (FColor& Pixel : Bitmap)
+		{
+			Pixel = FLinearColor(Pixel).ToFColor(true); // 转换为sRGB
+		}
+
+		// 保存为PNG
+		FFileHelper::CreateBitmap(*FullFilePath, RenderTarget->SizeX, RenderTarget->SizeY, Bitmap.GetData());
+
+		if (Debug)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Saved image to: %s"), *FullFilePath);
+		}
+	}
+}
+
 
 
 void ASavePhotoPawn::Print(const FString& Target)
