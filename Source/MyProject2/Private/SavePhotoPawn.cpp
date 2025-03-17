@@ -142,6 +142,17 @@ void ASavePhotoPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 
 void ASavePhotoPawn::SaveImage(const FString& SavePath, const FString& FileName, bool bOverride, bool Debug)
 {
+    // 如果不在 Game Thread，则切换到 Game Thread
+    if (!IsInGameThread())
+    {
+        UE_LOG(LogTemp, Warning, TEXT("SaveImage called from a non-game thread. Switching to Game Thread."));
+        AsyncTask(ENamedThreads::GameThread, [this, SavePath, FileName, bOverride, Debug]()
+        {
+            this->SaveImage(SavePath, FileName, bOverride, Debug);
+        });
+        return;
+    }
+
     // 检查 SceneCaptureComponent 是否有效
     if (!SceneCaptureComponent)
     {
@@ -158,21 +169,18 @@ void ASavePhotoPawn::SaveImage(const FString& SavePath, const FString& FileName,
     }
 
     // 使用 PF_FloatRGBA 格式
-    RenderTarget->InitCustomFormat(1920, 1080, PF_FloatRGBA, false); // 使用 PF_FloatRGBA 格式
-    RenderTarget->TargetGamma = 2.2f; // 设置目标Gamma值
+    RenderTarget->InitCustomFormat(1920, 1080, PF_FloatRGBA, false);
+    RenderTarget->TargetGamma = 2.2f;
     RenderTarget->RenderTargetFormat = ETextureRenderTargetFormat::RTF_RGBA16f;
 
     // 确保后处理设置生效
     SceneCaptureComponent->PostProcessSettings.bOverride_SceneFringeIntensity = true;
     SceneCaptureComponent->PostProcessSettings.SceneFringeIntensity = 0.0f;
     SceneCaptureComponent->PostProcessBlendWeight = 1.0f;
-    SceneCaptureComponent->CaptureSource = ESceneCaptureSource::SCS_FinalColorHDR; // 使用HDR数据
+    SceneCaptureComponent->CaptureSource = ESceneCaptureSource::SCS_FinalColorHDR;
 
     // 设置渲染目标并捕获
     SceneCaptureComponent->TextureTarget = RenderTarget;
-
-    // 确保在游戏线程中调用
-    check(IsInGameThread());
     SceneCaptureComponent->CaptureScene();
 
     // 检查渲染目标是否有效
@@ -195,15 +203,12 @@ void ASavePhotoPawn::SaveImage(const FString& SavePath, const FString& FileName,
         // 获取文件夹中的所有 PNG 文件
         TArray<FString> PNGFiles;
         IFileManager& FileManager = IFileManager::Get();
-
-        // 查找所有 PNG 文件
         const FString SearchPath = FPaths::Combine(SavePath, TEXT("*.bmp"));
         FileManager.FindFiles(PNGFiles, *SearchPath, true, false);
 
-        // 如果有 PNG 文件，则删除它们
         if (PNGFiles.Num() > 0)
         {
-            Print("Found PNG files, deleting...");
+            UE_LOG(LogTemp, Warning, TEXT("Found PNG files, deleting..."));
             for (const FString& PNGFile : PNGFiles)
             {
                 FString FilePath = FPaths::Combine(SavePath, PNGFile);
@@ -219,7 +224,7 @@ void ASavePhotoPawn::SaveImage(const FString& SavePath, const FString& FileName,
         }
         else
         {
-            Print("No PNG files found.");
+            UE_LOG(LogTemp, Warning, TEXT("No PNG files found."));
         }
     }
 
@@ -240,7 +245,7 @@ void ASavePhotoPawn::SaveImage(const FString& SavePath, const FString& FileName,
     for (const FFloat16Color& HDRPixel : HDRBitmap)
     {
         FLinearColor LinearColor(HDRPixel.R, HDRPixel.G, HDRPixel.B, HDRPixel.A);
-        LDRBitmap.Add(LinearColor.ToFColor(true)); // 转换为sRGB
+        LDRBitmap.Add(LinearColor.ToFColor(true));
     }
 
     // 保存为PNG
@@ -256,6 +261,7 @@ void ASavePhotoPawn::SaveImage(const FString& SavePath, const FString& FileName,
         UE_LOG(LogTemp, Error, TEXT("Failed to save image to: %s"), *FullFilePath);
     }
 }
+
 
 
 
