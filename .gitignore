@@ -20,6 +20,7 @@ Content/*
 
 # 允许上传特定的文件
 !Content/Untitled.umap
+!Content/Untitled_2.umap
 !Content/Untitled_HLOD0_Instancing.uasset
 
 # 允许上传特定文件夹
