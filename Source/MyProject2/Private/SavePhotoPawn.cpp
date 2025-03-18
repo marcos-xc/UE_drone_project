@@ -7,6 +7,8 @@
 // #include "Engine/TextureRenderTarget2D.h"
 // #include "Engine/SceneCapture2D.h"
 // #include "Kismet/GameplayStatics.h"
+#include <string>
+
 #include "Kismet/KismetRenderingLibrary.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
@@ -139,7 +141,6 @@ void ASavePhotoPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 
 
 
-
 void ASavePhotoPawn::SaveImage(const FString& SavePath, const FString& FileName, bool bOverride, bool Debug)
 {
     // 如果不在 Game Thread，则切换到 Game Thread
@@ -170,7 +171,7 @@ void ASavePhotoPawn::SaveImage(const FString& SavePath, const FString& FileName,
 
     // 使用 PF_FloatRGBA 格式
     RenderTarget->InitCustomFormat(1920, 1080, PF_FloatRGBA, false);
-    RenderTarget->TargetGamma = 2.2f;
+    RenderTarget->TargetGamma = 2.2f; // 默认 Gamma 值
     RenderTarget->RenderTargetFormat = ETextureRenderTargetFormat::RTF_RGBA16f;
 
     // 确保后处理设置生效
@@ -239,12 +240,26 @@ void ASavePhotoPawn::SaveImage(const FString& SavePath, const FString& FileName,
 
     RTResource->ReadFloat16Pixels(HDRBitmap);
 
-    // 如果需要保存为LDR PNG，将HDR数据转换为8位RGBA
+    // 调整 Gamma 值
+    float Gamma = 0.5f; // 调大 Gamma 值，使图片变暗
+
+    // 将HDR数据转换为8位RGBA，并应用 Gamma 调整
     TArray<FColor> LDRBitmap;
     LDRBitmap.Reserve(HDRBitmap.Num());
     for (const FFloat16Color& HDRPixel : HDRBitmap)
     {
         FLinearColor LinearColor(HDRPixel.R, HDRPixel.G, HDRPixel.B, HDRPixel.A);
+
+        // 应用 Gamma 调整
+        LinearColor.R = FMath::Pow(LinearColor.R, 1.0f / Gamma);
+        LinearColor.G = FMath::Pow(LinearColor.G, 1.0f / Gamma);
+        LinearColor.B = FMath::Pow(LinearColor.B, 1.0f / Gamma);
+
+        // 确保颜色值在有效范围内
+        LinearColor.R = FMath::Clamp(LinearColor.R, 0.0f, 1.0f);
+        LinearColor.G = FMath::Clamp(LinearColor.G, 0.0f, 1.0f);
+        LinearColor.B = FMath::Clamp(LinearColor.B, 0.0f, 1.0f);
+
         LDRBitmap.Add(LinearColor.ToFColor(true));
     }
 

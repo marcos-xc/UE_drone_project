@@ -36,7 +36,7 @@ public:
 
 	// Capture function
 	void CaptureImage();
-
+	
 	// UFUNCTION(BlueprintCallable,Category="Capture")
 	// // Save image function
 	// void SaveImage(bool Debug);
