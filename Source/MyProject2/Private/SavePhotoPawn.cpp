@@ -192,7 +192,7 @@ void ASavePhotoPawn::SaveImage(const FString& SavePath, const FString& FileName,
     }
 
     // 生成完整路径
-    FString FullFilePath = FPaths::Combine(SavePath, FileName + TEXT(".png"));
+    FString FullFilePath = FPaths::Combine(SavePath, FileName + TEXT("."));
     if (FullFilePath.IsEmpty())
     {
         UE_LOG(LogTemp, Error, TEXT("File path is empty!"));
