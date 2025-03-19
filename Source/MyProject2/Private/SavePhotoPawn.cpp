@@ -210,12 +210,14 @@ void ASavePhotoPawn::SaveImage(const FString& SavePath, const FString& FileName,
     else
     {
         // 如果不勾选覆盖，生成一个唯一的文件名
-        int32 FileIndex = 1;
+        int32 FileIndex = LastFileIndex; // 从上次的索引开始
         do
         {
-            FullFilePath = FPaths::Combine(SavePath, FString::Printf(TEXT("%s_%d%d%d%d.bmp"), *FileName,0,0,0, FileIndex));
+            FullFilePath = FPaths::Combine(SavePath, FString::Printf(TEXT("%s_%d%d%d%d.bmp"), *FileName, 0, 0, 0, FileIndex));
             FileIndex++;
         } while (FPaths::FileExists(FullFilePath)); // 检查文件是否已存在
+
+        LastFileIndex = FileIndex; // 更新最后的索引
     }
 
     if (FullFilePath.IsEmpty())

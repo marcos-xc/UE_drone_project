@@ -52,4 +52,6 @@ private:
 	// 声明 RenderTarget 作为成员变量
 	UPROPERTY()
 	UTextureRenderTarget2D* RenderTarget;
+
+	int32 LastFileIndex = 1;
 };
