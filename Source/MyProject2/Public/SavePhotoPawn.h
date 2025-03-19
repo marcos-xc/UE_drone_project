@@ -33,7 +33,7 @@ public:
 
 	// Timer for capture function
 	FTimerHandle CaptureTimerHandle;
-
+	
 	// Capture function
 	void CaptureImage();
 	
@@ -45,6 +45,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Screenshot")
 	void SaveImage(const FString& SavePath, const FString& FileName,bool bOverride, bool Debug);
 
+	
 	static void Print(const FString& Target);
-
+	
+private:
+	// 声明 RenderTarget 作为成员变量
+	UPROPERTY()
+	UTextureRenderTarget2D* RenderTarget;
 };

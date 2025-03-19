@@ -4,11 +4,15 @@
 #include "SavePhotoPawn.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "Components/SceneCaptureComponent2D.h"
+#include "Async/Async.h"
+#include "RenderCommandFence.h"
+#include "RHI.h"
+#include "RHIResources.h"
+#include "RenderGraphUtils.h"
 // #include "Engine/TextureRenderTarget2D.h"
 // #include "Engine/SceneCapture2D.h"
 // #include "Kismet/GameplayStatics.h"
 #include <string>
-
 #include "Kismet/KismetRenderingLibrary.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
@@ -21,6 +25,8 @@ ASavePhotoPawn::ASavePhotoPawn()
     
 	SceneCaptureComponent = CreateDefaultSubobject<USceneCaptureComponent2D>(TEXT("SceneCaptureComponent"));
 	SceneCaptureComponent->SetupAttachment(RootComponent);
+
+    RenderTarget = nullptr;
 }
 
 // Called when the game starts or when spawned
@@ -161,18 +167,21 @@ void ASavePhotoPawn::SaveImage(const FString& SavePath, const FString& FileName,
         return;
     }
 
-    // 创建支持HDR的渲染目标
-    UTextureRenderTarget2D* RenderTarget = NewObject<UTextureRenderTarget2D>(this);
+    // 创建或复用渲染目标
     if (!RenderTarget)
     {
-        UE_LOG(LogTemp, Error, TEXT("Failed to create RenderTarget!"));
-        return;
-    }
+        RenderTarget = NewObject<UTextureRenderTarget2D>(this);
+        if (!RenderTarget)
+        {
+            UE_LOG(LogTemp, Error, TEXT("Failed to create RenderTarget!"));
+            return;
+        }
 
-    // 使用 PF_FloatRGBA 格式
-    RenderTarget->InitCustomFormat(1920, 1080, PF_FloatRGBA, false);
-    RenderTarget->TargetGamma = 2.2f; // 默认 Gamma 值
-    RenderTarget->RenderTargetFormat = ETextureRenderTargetFormat::RTF_RGBA16f;
+        // 使用 PF_FloatRGBA 格式
+        RenderTarget->InitCustomFormat(1280, 720, PF_FloatRGBA, false); // 降低分辨率以减少内存占用
+        RenderTarget->TargetGamma = 2.2f; // 默认 Gamma 值
+        RenderTarget->RenderTargetFormat = ETextureRenderTargetFormat::RTF_RGBA16f;
+    }
 
     // 确保后处理设置生效
     SceneCaptureComponent->PostProcessSettings.bOverride_SceneFringeIntensity = true;
@@ -192,45 +201,30 @@ void ASavePhotoPawn::SaveImage(const FString& SavePath, const FString& FileName,
     }
 
     // 生成完整路径
-    FString FullFilePath = FPaths::Combine(SavePath, FileName + TEXT(".png"));
+    FString FullFilePath;
+    if (bOverride)
+    {
+        // 如果勾选了覆盖，直接使用固定文件名
+        FullFilePath = FPaths::Combine(SavePath, FileName + TEXT(".bmp"));
+    }
+    else
+    {
+        // 如果不勾选覆盖，生成一个唯一的文件名
+        int32 FileIndex = 1;
+        do
+        {
+            FullFilePath = FPaths::Combine(SavePath, FString::Printf(TEXT("%s_%d%d%d%d.bmp"), *FileName,0,0,0, FileIndex));
+            FileIndex++;
+        } while (FPaths::FileExists(FullFilePath)); // 检查文件是否已存在
+    }
+
     if (FullFilePath.IsEmpty())
     {
         UE_LOG(LogTemp, Error, TEXT("File path is empty!"));
         return;
     }
 
-    if (bOverride)
-    {
-        // 获取文件夹中的所有 PNG 文件
-        TArray<FString> PNGFiles;
-        IFileManager& FileManager = IFileManager::Get();
-        const FString SearchPath = FPaths::Combine(SavePath, TEXT("*.bmp"));
-        FileManager.FindFiles(PNGFiles, *SearchPath, true, false);
-
-        if (PNGFiles.Num() > 0)
-        {
-            UE_LOG(LogTemp, Warning, TEXT("Found PNG files, deleting..."));
-            for (const FString& PNGFile : PNGFiles)
-            {
-                FString FilePath = FPaths::Combine(SavePath, PNGFile);
-                if (FileManager.Delete(*FilePath))
-                {
-                    UE_LOG(LogTemp, Warning, TEXT("Deleted file: %s"), *FilePath);
-                }
-                else
-                {
-                    UE_LOG(LogTemp, Warning, TEXT("Failed to delete file: %s"), *FilePath);
-                }
-            }
-        }
-        else
-        {
-            UE_LOG(LogTemp, Warning, TEXT("No PNG files found."));
-        }
-    }
-
-    // 读取像素数据
-    TArray<FFloat16Color> HDRBitmap;
+    // 读取像素数据（必须在 Game Thread 中执行）
     FTextureRenderTargetResource* RTResource = RenderTarget->GameThread_GetRenderTargetResource();
     if (!RTResource)
     {
@@ -238,45 +232,49 @@ void ASavePhotoPawn::SaveImage(const FString& SavePath, const FString& FileName,
         return;
     }
 
+    TArray<FFloat16Color> HDRBitmap;
     RTResource->ReadFloat16Pixels(HDRBitmap);
 
-    // 调整 Gamma 值
-    float Gamma = 0.5f; // 调大 Gamma 值，使图片变暗
-
-    // 将HDR数据转换为8位RGBA，并应用 Gamma 调整
-    TArray<FColor> LDRBitmap;
-    LDRBitmap.Reserve(HDRBitmap.Num());
-    for (const FFloat16Color& HDRPixel : HDRBitmap)
+    // 将像素数据传递给异步任务进行处理
+    AsyncTask(ENamedThreads::AnyBackgroundThreadNormalTask, [this, FullFilePath, HDRBitmap = MoveTemp(HDRBitmap), Debug]()
     {
-        FLinearColor LinearColor(HDRPixel.R, HDRPixel.G, HDRPixel.B, HDRPixel.A);
+        // 调整 Gamma 值
+        float Gamma = 0.5f; // 调大 Gamma 值，使图片变暗
 
-        // 应用 Gamma 调整
-        LinearColor.R = FMath::Pow(LinearColor.R, 1.0f / Gamma);
-        LinearColor.G = FMath::Pow(LinearColor.G, 1.0f / Gamma);
-        LinearColor.B = FMath::Pow(LinearColor.B, 1.0f / Gamma);
-
-        // 确保颜色值在有效范围内
-        LinearColor.R = FMath::Clamp(LinearColor.R, 0.0f, 1.0f);
-        LinearColor.G = FMath::Clamp(LinearColor.G, 0.0f, 1.0f);
-        LinearColor.B = FMath::Clamp(LinearColor.B, 0.0f, 1.0f);
-
-        LDRBitmap.Add(LinearColor.ToFColor(true));
-    }
-
-    // 保存为PNG
-    if (FFileHelper::CreateBitmap(*FullFilePath, RenderTarget->SizeX, RenderTarget->SizeY, LDRBitmap.GetData()))
-    {
-        if (Debug)
+        // 将HDR数据转换为8位RGBA，并应用 Gamma 调整
+        TArray<FColor> LDRBitmap;
+        LDRBitmap.Reserve(HDRBitmap.Num());
+        for (const FFloat16Color& HDRPixel : HDRBitmap)
         {
-            UE_LOG(LogTemp, Warning, TEXT("Saved image to: %s"), *FullFilePath);
-        }
-    }
-    else
-    {
-        UE_LOG(LogTemp, Error, TEXT("Failed to save image to: %s"), *FullFilePath);
-    }
-}
+            FLinearColor LinearColor(HDRPixel.R, HDRPixel.G, HDRPixel.B, HDRPixel.A);
 
+            // 应用 Gamma 调整
+            LinearColor.R = FMath::Pow(LinearColor.R, 1.0f / Gamma);
+            LinearColor.G = FMath::Pow(LinearColor.G, 1.0f / Gamma);
+            LinearColor.B = FMath::Pow(LinearColor.B, 1.0f / Gamma);
+
+            // 确保颜色值在有效范围内
+            LinearColor.R = FMath::Clamp(LinearColor.R, 0.0f, 1.0f);
+            LinearColor.G = FMath::Clamp(LinearColor.G, 0.0f, 1.0f);
+            LinearColor.B = FMath::Clamp(LinearColor.B, 0.0f, 1.0f);
+
+            LDRBitmap.Add(LinearColor.ToFColor(true));
+        }
+
+        // 保存为BMP
+        if (FFileHelper::CreateBitmap(*FullFilePath, 1280, 720, LDRBitmap.GetData()))
+        {
+            if (Debug)
+            {
+                UE_LOG(LogTemp, Warning, TEXT("Saved image to: %s"), *FullFilePath);
+            }
+        }
+        else
+        {
+            UE_LOG(LogTemp, Error, TEXT("Failed to save image to: %s"), *FullFilePath);
+        }
+    });
+}
 
 
 
