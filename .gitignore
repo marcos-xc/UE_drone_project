@@ -29,7 +29,7 @@ Content/*
 !Content/Material/
 # !Content/ModernBuildings/
 
-
+!Content/WRJ/
 
 #files
 *.rar
