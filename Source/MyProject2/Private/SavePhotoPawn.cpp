@@ -157,6 +157,58 @@ void ASavePhotoPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 #include "Modules/ModuleManager.h"
 #include "Misc/FileHelper.h"
 
+#include "SavePhotoPawn.h"
+#include "Engine/World.h"
+#include "TimerManager.h"
+#include "IImageWrapper.h"
+#include "IImageWrapperModule.h"
+#include "Modules/ModuleManager.h"
+#include "Misc/FileHelper.h"
+#include "Async/Async.h"
+
+//////////////////////////////////////////////////////////////////////////
+// 1) 外部调用的延迟拍照接口
+
+void ASavePhotoPawn::RequestSaveImage(const FString& SavePath, const FString& FileName, bool bOverride, bool Debug)
+{
+    // 保证在 GameThread 中执行
+    if (!IsInGameThread())
+    {
+        AsyncTask(ENamedThreads::GameThread, [this, SavePath, FileName, bOverride, Debug]()
+        {
+            RequestSaveImage(SavePath, FileName, bOverride, Debug);
+        });
+        return;
+    }
+
+    UWorld* World = GetWorld();
+    if (World)
+    {
+        FTimerHandle DummyHandle;
+        // 延迟到下一帧执行 SaveImage，避免当前帧 PostTick 阶段操作组件
+        World->GetTimerManager().SetTimerForNextTick(
+            FTimerDelegate::CreateWeakLambda(this, [this, SavePath, FileName, bOverride, Debug]()
+            {
+                SaveImage(SavePath, FileName, bOverride, Debug);
+            })
+        );
+    }
+    else
+    {
+        UE_LOG(LogTemp, Error, TEXT("RequestSaveImage failed: No valid UWorld."));
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////
+// 2) 真正执行拍照与保存的函数
+
+
+
+#include "IImageWrapper.h"
+#include "IImageWrapperModule.h"
+#include "Modules/ModuleManager.h"
+#include "Misc/FileHelper.h"
+
 // 复制这段到你的 ASavePhotoPawn.cpp
 void ASavePhotoPawn::SaveImage(const FString& SavePath, const FString& FileName, bool bOverride, bool Debug)
 {
@@ -310,10 +362,75 @@ void ASavePhotoPawn::SaveImage(const FString& SavePath, const FString& FileName,
 
 
 
+
+
+
+
+
+
+
 void ASavePhotoPawn::Print(const FString& Target)
 {
 	if (GEngine)
 	{
 		GEngine->AddOnScreenDebugMessage(-1,5.0f,FColor::MakeRandomColor(),Target);
 	}
+}
+
+
+
+
+
+void ASavePhotoPawn::SaveHighResImage(const FString& SavePath, const FString& FileName, bool bOverride, bool Debug)
+{
+    // 保证在 GameThread 中执行
+    if (!IsInGameThread())
+    {
+        AsyncTask(ENamedThreads::GameThread, [this, SavePath, FileName, bOverride, Debug]()
+        {
+            this->SaveHighResImage(SavePath, FileName, bOverride, Debug);
+        });
+        return;
+    }
+
+    // 拼接完整的文件名（后缀为 .png），逻辑与原函数一致
+    FString FullFilePath;
+    if (bOverride)
+    {
+        FullFilePath = FPaths::Combine(SavePath, FileName + TEXT(".png"));
+    }
+    else
+    {
+        int32 FileIndex = LastFileIndex;
+        do
+        {
+            FullFilePath = FPaths::Combine(SavePath, FString::Printf(TEXT("%s_%04d.png"), *FileName, FileIndex));
+            FileIndex++;
+        } while (FPaths::FileExists(FullFilePath));
+        LastFileIndex = FileIndex;
+    }
+
+    if (FullFilePath.IsEmpty())
+    {
+        UE_LOG(LogTemp, Error, TEXT("File path is empty!"));
+        return;
+    }
+
+    // 构造 HighResShot 命令字符串
+    // 这里设置分辨率乘数为 1（即当前分辨率拍照），你可以根据需求调整乘数
+    FString Command = FString::Printf(TEXT("HighResShot 1 %s"), *FullFilePath);
+
+    // 执行控制台命令，注意该命令会在后台异步处理截图
+    if (GEngine && GetWorld())
+    {
+        GEngine->Exec(GetWorld(), *Command);
+        if (Debug)
+        {
+            UE_LOG(LogTemp, Warning, TEXT("HighResShot command executed: %s"), *Command);
+        }
+    }
+    else
+    {
+        UE_LOG(LogTemp, Error, TEXT("GEngine 或 GetWorld() 无效！"));
+    }
 }
